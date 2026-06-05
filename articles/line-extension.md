@@ -8,21 +8,43 @@ published: true
 
 # はじめに
 
-Linux で Chrome 版 LINE を使うとき、毎回 Chrome を起動してから LINE 拡張機能を開くのは少し面倒ではないでしょうか。
+Linux で Chrome 版 LINE を使うとき、LINE を起動するためだけに Chrome を起動するのはかなり面倒です。
 
-そこで今回は、Chrome 拡張機能の LINE をコマンドから直接起動し、`.desktop` ファイルを作成することで、通常のアプリのようにアプリケーションランチャーから起動できるようにします。
+そこで今回は、Chrome 拡張機能をコマンドから直接起動し、.desktop ファイルに登録することで、アプリケーションランチャーから起動できるようにします。
+
+# 結論
+
+```txt
+~/.local/share/applications/line.desktop
+```
+
+を作成し、以下のように記述します。
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=LINE
+Comment=LINE for Chrome
+Exec=chromium --app="chrome-extension://ophjlpahpchlmihnnnihgmmeilfjmjjc/index.html#/"
+Icon=/home/ユーザー名/.local/share/icons/line.png
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupNotify=true
+```
+
+`Name`, `Comment`, `Icon`, `Categories`, `StartupNotify` は自由に変更して構いません。
+
+また、Chromium 以外のブラウザを使用している場合は、`Exec` の `chromium` の部分を使用しているブラウザのコマンド名に変更してください。
 
 # 仕組み
 
-Chrome や Chromium には、指定した URL をアプリ風のウィンドウで開く `--app` オプションがあります。
+Chrome や Chromium では `--app` オプションを使うことで、URL バーやタブバーのない独立したウィンドウとしてページを開くことができます。
 
 ```bash
 chromium --app="[開きたいURL]"
 ```
 
-このオプションを使うと、URL バーやタブバーのない独立したウィンドウとして開けます。
-
-また、Chrome 拡張機能のページは次のような URL で表されます。
+また、Chrome 拡張機能のページには次のような URL が割り当てられています。
 
 ```txt
 chrome-extension://[拡張機能ID]/[拡張機能内のHTMLファイル]
@@ -34,14 +56,7 @@ chrome-extension://[拡張機能ID]/[拡張機能内のHTMLファイル]
 chromium --app="chrome-extension://[拡張機能ID]/[拡張機能内のHTMLファイル]"
 ```
 
-# やること
-
-今回は次の2つを行います。
-
-* LINE 拡張機能の URL を調べる
-* `.desktop` ファイルを作成する
-
-# 拡張機能の URL を調べる
+## 拡張機能の URL を調べる
 
 まず、Chrome または Chromium で次のページを開きます。
 
@@ -69,7 +84,7 @@ Inspect views
 
 ここから、LINE 拡張機能の画面として `index.html` が使われていることが分かります。
 
-そのため、LINE 拡張機能の URL は次のようになります。
+そのため、LINE 拡張機能の URL は次のように表されます。
 
 ```txt
 chrome-extension://ophjlpahpchlmihnnnihgmmeilfjmjjc/index.html#/
@@ -77,7 +92,7 @@ chrome-extension://ophjlpahpchlmihnnnihgmmeilfjmjjc/index.html#/
 
 実際にこの URL を Chrome または Chromium に打ち込んでみると、LINE をページとして開くことができます。
 
-# `.desktop` ファイルを作成する
+## `.desktop` ファイルを作成する
 
 Linux では、`.desktop` ファイルを作成することで、アプリケーションランチャーから任意のコマンドを起動できるようになります。
 
@@ -95,32 +110,18 @@ Type=Application
 Name=LINE
 Comment=LINE for Chrome
 Exec=chromium --app="chrome-extension://ophjlpahpchlmihnnnihgmmeilfjmjjc/index.html#/"
-Icon=~/.local/share/icons/line.png
+Icon=/home/ユーザー名/.local/share/icons/line.png
 Terminal=false
 Categories=Network;InstantMessaging;
 StartupNotify=true
 ```
 
-`Exec` には、LINE 拡張機能をアプリ風に起動するコマンドを書いています。
-
-```ini
-Exec=chromium --app="chrome-extension://ophjlpahpchlmihnnnihgmmeilfjmjjc/index.html#/"
-```
+`Exec` には、先ほど調べたコマンドを指定しています。
 
 `Icon` には、アプリケーションランチャーに表示したいアイコン画像のパスを指定します。
-
-```ini
-Icon=~/.local/share/icons/line.png
-```
-
-ここでは、適当な LINE のアイコン画像を用意して、次の場所に置いています。
-このパスは自分の環境に合わせて変更してください。
+ここではLINE のアイコン画像を用意して、アイコン置き場に置いています。
 
 Google Chrome を使っている場合は、`Exec` の `chromium` を `google-chrome-stable` などに変更します。
-
-```ini
-Exec=google-chrome-stable --app="chrome-extension://ophjlpahpchlmihnnnihgmmeilfjmjjc/index.html#/"
-```
 
 ここまで設定すると、rofi などのアプリケーションランチャーから `LINE` として起動できるようになります。
 
