@@ -1,15 +1,21 @@
 # Zenn CLI
 
+## セットアップ
+
+```bash
+mise install
+```
+
 ## 記事の作成
 
 ```bash
-npx zenn new:article
+zenn new:article
 ```
 
 ## プレビュー
 
 ```bash
-npx zenn preview
+zenn preview
 ```
 
 ## 記事の公開

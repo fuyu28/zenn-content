@@ -1,0 +1,3 @@
+[tools]
+node = "24.21.0"
+"npm:zenn-cli" = "0.5.4"
