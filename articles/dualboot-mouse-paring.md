@@ -1,5 +1,5 @@
 ---
-title: 'デュアルブート環境（Windows / Linux）でBluetoothデバイスを共有する'
+title: "デュアルブート環境（Windows / Linux）でBluetoothデバイスを共有する"
 emoji: "🖱"
 type: "tech" # tech: 技術記事 / idea: アイデア
 topics: ["デュアルブート", "linux", "windows", "endeavouros", "bluetooth"]
@@ -25,7 +25,7 @@ Windows と Linux のデュアルブート環境で、同じ Bluetooth デバイ
 - **PC**: Dell Inspiron 14 5430
   - **OS 1**: Windows 11 Home (25H2)
   - **OS 2**: EndeavourOS Linux x86_64 (Kernel: 7.0.8-arch1-1 / WM: i3 / X11)
-- **Bluetooth デバイス:
+- **Bluetooth デバイス**:
   - マウス: [ELECOM SHELLPHA M-SH30BBSKBK](https://shop.elecom.co.jp/category/SHELLPHA/4549550273107.html)
 
 # 全体の流れ
@@ -220,13 +220,13 @@ Key=0123456789ABCDEF0123456789ABCDEF
 
 これらはそのまま貼り付けるのではなく、以下のように変換して `info` ファイルの `[LongTermKey]` セクションに書き込みます。
 
-| Windows（`.reg`）の項目 | Linux（`info`）の項目 | 変換ルール |
-| --- | --- | --- |
-| `LTK` | `Key` | カンマを除去して大文字にする |
-| `AuthReq` | `Authenticated` | 10 進数に変換する（または既存の `info` の値を維持） |
-| `KeyLength` | `EncSize` | 16 進数から 10 進数に変換する（`00000010` → `16`） |
-| `EDIV` | `EDiv` | 16 進数から 10 進数に変換する |
-| `ERand` | `Rand` | **バイト順を逆にしてから** 10 進数に変換する |
+| Windows（`.reg`）の項目 | Linux（`info`）の項目 | 変換ルール                                          |
+| ----------------------- | --------------------- | --------------------------------------------------- |
+| `LTK`                   | `Key`                 | カンマを除去して大文字にする                        |
+| `AuthReq`               | `Authenticated`       | 10 進数に変換する（または既存の `info` の値を維持） |
+| `KeyLength`             | `EncSize`             | 16 進数から 10 進数に変換する（`00000010` → `16`）  |
+| `EDIV`                  | `EDiv`                | 16 進数から 10 進数に変換する                       |
+| `ERand`                 | `Rand`                | **バイト順を逆にしてから** 10 進数に変換する        |
 
 #### `EDIV` と `ERand` の変換例
 
@@ -263,28 +263,28 @@ Rand=16916131041473265527
 
 #### Logicool MX Master 3 / Xbox One S Wireless Controller
 
-| 項目名 | 変換方法 |
-| --- | --- |
+| 項目名                                     | 変換方法                     |
+| ------------------------------------------ | ---------------------------- |
 | `IRK`（`[IdentityResolvingKey]` の `Key`） | カンマを除去して大文字にする |
-| `LTK`（`[LongTermKey]` の `Key`） | カンマを除去して大文字にする |
-| `ERand`（`Rand`） | `0` にする |
-| `EDIV`（`EDiv`） | `0` にする |
+| `LTK`（`[LongTermKey]` の `Key`）          | カンマを除去して大文字にする |
+| `ERand`（`Rand`）                          | `0` にする                   |
+| `EDIV`（`EDiv`）                           | `0` にする                   |
 
 #### ThinkPad TrackPoint Keyboard II / Logicool Pebble M350 / Logicool G604 Lightspeed
 
-| 項目名 | 変換方法 |
-| --- | --- |
-| `IRK`（`[IdentityResolvingKey]` の `Key`） | **バイト順を逆にして**大文字にする |
-| `LTK`（`[LongTermKey]` の `Key`） | カンマを除去して大文字にする |
-| `ERand`（`Rand`） | バイト順を逆にしてから 10 進数に変換する |
-| `EDIV`（`EDiv`） | **バイト順を逆にしてから** 10 進数に変換する |
+| 項目名                                     | 変換方法                                     |
+| ------------------------------------------ | -------------------------------------------- |
+| `IRK`（`[IdentityResolvingKey]` の `Key`） | **バイト順を逆にして**大文字にする           |
+| `LTK`（`[LongTermKey]` の `Key`）          | カンマを除去して大文字にする                 |
+| `ERand`（`Rand`）                          | バイト順を逆にしてから 10 進数に変換する     |
+| `EDIV`（`EDiv`）                           | **バイト順を逆にしてから** 10 進数に変換する |
 
 #### Xbox ワイヤレスコントローラー
 
-| 項目名 | 変換方法 |
-|---|---|
+| 項目名                            | 変換方法                     |
+| --------------------------------- | ---------------------------- |
 | `LTK`（`[LongTermKey]` の `Key`） | カンマを除去して大文字にする |
-:::
+| :::                               |
 
 ---
 
