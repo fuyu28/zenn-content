@@ -1,220 +1,214 @@
 ---
-title: 'デュアルブートLinuxでBluetoothマウスを使えるようにする'
+title: 'デュアルブート環境（Windows / Linux）でBluetoothデバイスを共有する'
 emoji: "🖱"
 type: "tech" # tech: 技術記事 / idea: アイデア
 topics: ["デュアルブート", "linux", "windows", "endeavouros", "bluetooth"]
 published: true
 ---
 
-# 概要
+# はじめに
 
-Windows 11 / EndeavourOS のデュアルブート環境で、Bluetooth マウスを両方の OS から使えるように設定したときの備忘録です。
+Windows と Linux のデュアルブート環境で、同じ Bluetooth デバイスを両方の OS から使いたいことがあります。
 
-通常、デュアルブート環境で Bluetooth マウスを片方の OS にペアリングすると、OS ごとに異なるペアリングキーが生成され、もう片方の OS では接続できなくなることがあります。
+しかし、片方の OS でペアリングしたあとに、もう片方の OS でもペアリングし直すと、最初に設定した OS 側で接続できなくなってしまいます。
 
-この記事では、Windows 側のペアリング情報を取得し、Linux 側の BlueZ の設定に反映することで両方のOSからマウスを使えるようにするための手順をまとめます。
+これは、Bluetooth のペアリング時に「PC 側のアダプタの MAC アドレス」と「デバイス側の MAC アドレス」に紐づく共通のペアリングキーが生成されるためです。デュアルブート環境では両方の OS が同じ Bluetooth アダプタ（同じ MAC アドレス）を使うため、後からペアリングした OS のキーでデバイス側の記憶が上書きされ、前の OS のキーと一致しなくなってしまいます。
 
-設定にあたっては、ArchWiki の Bluetooth ページを参考にしました。
+この問題は、**Windows 側で生成されたペアリングキーを Linux（BlueZ）の設定ファイルにコピーする**ことで解決できます。
+
+今回は例として Bluetooth マウスを使って手順を説明します。
 
 # 環境
 
-今回使用した環境は以下の通りです。
+今回作業した環境は以下の通りです（設定には [ArchWiki の Bluetooth ページ](https://wiki.archlinux.org/title/Bluetooth#Dual_boot_pairing)を参考にしました）。
 
-## PC
+- **PC**: Dell Inspiron 14 5430
+  - **OS 1**: Windows 11 Home (25H2)
+  - **OS 2**: EndeavourOS Linux x86_64 (Kernel: 7.0.8-arch1-1 / WM: i3 / X11)
+- **Bluetooth デバイス:
+  - マウス: [ELECOM SHELLPHA M-SH30BBSKBK](https://shop.elecom.co.jp/category/SHELLPHA/4549550273107.html)
 
-- Host: Inspiron 14 5430
-- OS1: Windows 11 Home
-  - Version: 25H2
-- OS2: EndeavourOS Linux x86_64
-  - Kernel: 7.0.8-arch1-1
-  - WM: i3
-  - Session: X11
+# 全体の流れ
 
-## マウス
+以下の順番で作業を進めます。
 
-ELECOM SHELLPHA M-SH30BBSKBK
-[商品ページ](https://shop.elecom.co.jp/category/SHELLPHA/4549550273107.html)
+1. **Linux 側**でデバイスをペアリングする（設定ファイルの雛形を作るため）
+2. **Windows 側**でデバイスをペアリングする（デバイス本体に Windows 側のキーを記憶させるため）
+3. **Windows 側**のレジストリからペアリング情報をエクスポートする
+4. **Linux 側**の設定ファイル（`info`）を Windows 側のペアリング情報に書き換える
 
-# やること
+:::message
+**ペアリングごとに MAC アドレスが変わるデバイスについて**
+Bluetooth LE（BLE）対応のマウスやキーボードなどでは、**ペアリングし直すたびにデバイス側の MAC アドレスが変化する**ものがあります。
+その場合、Linux でペアリングしたときの MAC アドレスと、Windows でペアリングしたときの MAC アドレスが異なるため、作業中に**両方の MAC アドレスを控えておく**必要があります。
+:::
 
-- Linux 側でマウスをペアリングする
-- Windows 側でマウスをペアリングする
-- Windows 側のレジストリからペアリング情報を取得する
-- Linux 側のペアリング情報を Windows 側の情報に書き換える
+---
 
-# 最初に注意
+# 1. Linux 側でペアリングする
 
-マウスによっては、ペアリングのたびに MAC アドレスが変わるものがあります。
-この場合、Linux 側から見た MAC アドレスと Windows 側から見た MAC アドレスが異なるため、両方の MAC アドレスを確認しておく必要があります。
+まずは Linux 側でデバイスをペアリングし、`/var/lib/bluetooth/` 配下に設定ファイルを作らせます。
+（GUI の Bluetooth 設定ツールからペアリングしても構いません。ここでは `bluetoothctl` を使う手順を記載します）
 
-# Linux側のペアリング
+## パッケージとサービスの確認
 
-ここでは、Linux 側でマウスをペアリングする方法を説明します。
-
-## パッケージの用意
-
-`bluez` と `bluez-utils` が入っているか確認します。入っていなければインストールします。
+`bluez` と `bluez-utils` が入っていなければインストールし、`bluetooth.service` を起動します。
 
 ```bash
 sudo pacman -S bluez bluez-utils
-```
-
-## bluetooth.service の起動
-
-bluetooth.service が起動しているか確認します。
-
-```bash
-sudo systemctl status bluetooth.service
-```
-
-`enabled` になっていなければ、以下のコマンドで有効化して起動します。
-
-```bash
 sudo systemctl enable --now bluetooth.service
 ```
 
-## bluetoothctl を使ってペアリングする
+## `bluetoothctl` でペアリング
 
-まず、bluetoothctl を起動します。
+`bluetoothctl` を起動し、スキャンを開始します。
 
 ```bash
 bluetoothctl
 ```
 
-Bluetooth デバイスのスキャンを開始します。
-
 ```text
-scan on
+[bluetooth]# scan on
 ```
 
-検出されたデバイスを確認します。
+接続したいデバイスをペアリングモードにして、検出された一覧を確認します。
 
 ```text
-devices
+[bluetooth]# devices
+Device AA:BB:CC:DD:EE:FF デバイス名
 ```
 
-以下のように表示されるので、対象デバイスの MAC アドレスを控えておきます。
+対象デバイスの MAC アドレスを指定してペアリングします。
 
 ```text
-Device XX:XX:XX:XX:XX:XX デバイス名
+[bluetooth]# pair AA:BB:CC:DD:EE:FF
 ```
 
-その MAC アドレスを指定してペアリングします。
+:::message
+ここでペアリングした **デバイスの MAC アドレス（Linux 側）** を控えておいてください。
+:::
 
-```text
-pair XX:XX:XX:XX:XX:XX
-```
+---
 
-後で `/var/lib/bluetooth/` 以下にある `info` ファイルのディレクトリ名を編集するため、ここで確認した MAC アドレスを控えておきます。
+# 2. Windows 側でペアリングする
 
-# Windows 側のペアリング
+次に Windows を起動し、同じデバイスをペアリングします。
 
-ここでは、Windows 側でマウスをペアリングする方法を説明します。
+## デバイスの接続
 
-## 接続
-
-Windows の設定から `Bluetooth とデバイス` > `デバイス` > `デバイスの追加` を開き、マウスをペアリングします。
+Windows の「設定」から `Bluetooth とデバイス` > `デバイス` > `デバイスの追加` を開き、デバイスをペアリングします。
 
 ## デバイスの MAC アドレスの確認
 
-デバイスマネージャーを開き、`Bluetooth` の項目から対象のマウスを選択してプロパティを開きます。
+Windows 側で認識されているデバイスの MAC アドレスを確認します。
 
-`詳細` タブで `ハードウェア ID` を選択すると、MAC アドレスを確認できます。
+1. **デバイスマネージャー**を開く
+2. `Bluetooth` の項目から対象のデバイス（今回はマウス）を右クリックし、**プロパティ**を開く
+3. `詳細` タブを開き、プロパティから **ハードウェア ID** を選択する
 
-今回は以下のような形式で表示されていました。
+以下のように表示されている末尾 12 桁の英数字がデバイスの MAC アドレスです。
 
 ```text
-BTHLE\Dev_xxxxxxxxxxxx
+BTHLE\Dev_aabbccddeeff
 ```
 
-# レジストリ情報の取得
+:::message
+ここで確認した **デバイスの MAC アドレス（Windows 側）** も控えておいてください。
+:::
 
-Windows 側の Bluetooth ペアリング情報は、通常の管理者権限では閲覧できない場所に保存されています。そのため、`regedit.exe` を SYSTEM アカウントとして起動する必要があります。
+---
 
-ここでは、Microsoft Sysinternals の [PsExec](https://docs.microsoft.com/en-us/sysinternals/downloads/psexec) を使います。
+# 3. Windows のレジストリからペアリング情報を取得する
 
-まず、[PsTools](https://download.sysinternals.com/files/PSTools.zip) をダウンロードし、適当な場所に解凍します。
-その後、解凍したディレクトリで管理者権限のコマンドプロンプトを開き、以下のコマンドを実行します。
+Windows の Bluetooth ペアリング情報は、通常の管理者権限では閲覧できない領域に保存されています。そのため、Microsoft 公式ツールである [PsExec](https://learn.microsoft.com/ja-jp/sysinternals/downloads/psexec) を使って、レジストリエディタ（`regedit.exe`）を `SYSTEM` アカウント権限で起動します。
+
+## SYSTEM 権限でレジストリエディタを起動する
+
+1. [PsTools](https://download.sysinternals.com/files/PSTools.zip) をダウンロードし、任意のフォルダに解凍します。
+2. 解凍したフォルダで**管理者権限のコマンドプロンプト（または PowerShell）**を開き、以下のコマンドを実行します。
 
 ```cmd
 .\PsExec64.exe -s -i regedit.exe
 ```
 
 :::message alert
-この状態でレジストリエディタを操作すると、通常のユーザーアカウントではなく SYSTEM アカウントの権限でレジストリを操作することになります。
-
-誤ってレジストリキーを削除・変更すると、システムの安定性やセキュリティに重大な影響を与える可能性があります。
-
-基本的には、必要なキーを確認してエクスポートするだけにしてください。
+この状態のレジストリエディタは `SYSTEM` アカウントの権限で動作しています。
+誤って関係ないキーを削除・変更すると、システムが起動しなくなるなど重大な問題につながる可能性があります。**必要なキーを確認してエクスポートするだけ**にとどめてください。
 :::
 
-`regedit.exe` が起動したら、以下のパスを開きます。
+## ペアリング情報のエクスポート
+
+起動したレジストリエディタで、以下のパスを開きます。
 
 ```text
 HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Keys
 ```
 
-自分の PC の Bluetooth アダプタの MAC アドレスに対応するキーを開きます。このキー名では、MAC アドレスの `:` は省略されています。
+`Keys` の下に、**PC の Bluetooth アダプタの MAC アドレス**（`:` なしの 12 桁）の名前のフォルダ（キー）があります。それを開くと、以下のいずれかの形式でデバイスのペアリング情報が保存されています。
 
-その中に、ペアリングしたマウスの MAC アドレスに対応するキーを右クリックし、`.reg` ファイルとしてエクスポートします。
+- **Bluetooth LE（BLE）デバイスの場合**:
+  アダプタのキーの下に、さらに**デバイスの MAC アドレス**の名前のサブキーがあり、その中に `LTK`、`ERand`、`EDIV`、`IRK` などの複数の値が入っています。
+- **従来の Bluetooth デバイスの場合**:
+  アダプタのキーの直下に、**デバイスの MAC アドレス**の名前のバイナリ値（1 つだけ）が保存されています。
 
-エクスポートした `.reg` ファイルは、Linux 側からも参照できる場所に保存しておきます。
+対象のデバイスのキー（またはアダプタのキー）を右クリックし、**エクスポート**を選択して `.reg` ファイルとして保存します。
+保存した `.reg` ファイルは、USB メモリや共有パーティションなど、**Linux 側から参照できる場所**に置いておきます。
 
-# Linux 側のペアリング情報の書き換え
+---
 
-ここでは、Windows 側のペアリング情報を Linux 側の BlueZ の設定に反映する方法を説明します。
+# 4. Linux 側のペアリング情報を書き換える
 
-## Bluetooth 形式の確認
+再び Linux を起動し、先ほどエクスポートした `.reg` ファイルの中身を Linux（BlueZ）の設定ファイルに反映します。
 
-`.reg` ファイルの中身によって、Linux 側の `info` ファイルへ書き込む内容が異なります。
+## 4-1. 設定ファイルの場所へ移動する
 
-`.reg` ファイル内にペアリングキーが 1 つだけある場合は、従来の `[LinkKey]` を使う形式です。
-一方、`LTK` や `IRK` など複数のキーが含まれている場合は、Bluetooth LE 系のキーを BlueZ の形式に変換して書き込む必要があります。
+`/var/lib/bluetooth/` 配下は root 権限が必要なため、root に切り替えて移動します。
 
-### 5.1 以降の形式の変換方法
+```bash
+sudo -i
+cd /var/lib/bluetooth/<BluetoothアダプタのMACアドレス>
+```
 
-Windows 側の `.reg` に `LTK`, `IRK`, `ERand`, `EDIV` などが含まれている場合は、BlueZ の `info` に書き込む形式へ変換します。
+### MAC アドレスが変化していた場合
 
-デバイスによって、Windows 側の `.reg` から BlueZ の `info` へ書き込む値の変換方法が異なります。
+Linux でペアリングしたときと Windows でペアリングしたときで**デバイスの MAC アドレスが異なっていた場合**は、ディレクトリ名を Windows 側の MAC アドレス（コロン `:` 区切りの大文字）に変更します。
 
-代表的な変換方法は以下の通りです。
+```bash
+# 例: Linux側が AA:BB:CC:DD:EE:11、Windows側が AA:BB:CC:DD:EE:22 だった場合
+mv AA:BB:CC:DD:EE:11 AA:BB:CC:DD:EE:22
+```
 
-なお、以下のデバイスごとの変換方法は ArchWiki の Bluetooth ページを参考にしています。
-実際の値はデバイスや環境によって異なる可能性があるため、`.reg` の内容と BlueZ の `info` の形式を確認しながら作業してください。
+続いて、対象デバイスのディレクトリ内にある `info` ファイルをエディタで開きます。
 
-#### Logitech MX Master 3 / Xbox One S Wireless Controller
+```bash
+vim <Windows側のデバイスのMACアドレス>/info
+```
 
-| 項目名 | 変換方法 |
-|---|---|
-| `IRK` | コピーし、16 進数の桁間のスペースやカンマを除去する。 |
-| `LTK` | コピーし、16 進数の桁間のスペースやカンマを除去する。 |
-| `ERand` | `0` にする。 |
-| `EDIV` | `0` にする。 |
+---
 
-#### ThinkPad TrackPoint Keyboard II / Pebble M350 マウス / Logitech G604 Lightspeed マウス
+## 4-2. `.reg` の値を `info` 用の形式に変換して書き込む
 
-| 項目名 | 変換方法 |
-|---|---|
-| `IRK` | コピーし、バイト順を逆にする。 |
-| `LTK` | コピーし、16 進数の桁間のスペースやカンマを除去する。 |
-| `ERand` | コピーし、バイト順を逆にしてから 10 進数に変換する。 |
-| `EDIV` | コピーし、バイト順を逆にしてから 10 進数に変換する。 |
+エクスポートした `.reg` ファイルの中身に応じて、`info` ファイルを書き換えます。
 
-#### その他のデバイス
+### パターン A：従来の Bluetooth デバイス
 
-| 項目名 | 変換方法 |
-|---|---|
-| `LTK` | コピーし、16 進数の桁間のスペースやカンマを除去する。 |
-| `ERand` | コピーし、バイト順を逆にしてから 10 進数に変換する。 |
-| `EDIV` | 16 進数を 10 進数に変換する。 |
+`.reg` ファイルにデバイスの MAC アドレスを名前とした 16 進数の値だけが書かれている場合です。
 
-#### Xbox ワイヤレスコントローラー
+```reg
+"aabbccddeeff"=hex:01,23,45,67,89,ab,cd,ef,01,23,45,67,89,ab,cd,ef
+```
 
-| 項目名 | 変換方法 |
-|---|---|
-| `LTK` | コピーし、16 進数の桁間のスペースやカンマを除去する。 |
+この場合は、カンマ `,` を取り除いて大文字にし、`info` ファイルの `[LinkKey]` セクションの `Key` にそのまま貼り付けます。
 
-たとえば、Windows 側の `.reg` でその他のデバイスに当てはまる以下の場合を考えます。
+```ini
+[LinkKey]
+Key=0123456789ABCDEF0123456789ABCDEF
+```
+
+### パターン B：Bluetooth LE デバイス
+
+最近のマウスやキーボード（今回の ELECOM マウスも含む）の多くはこちらの形式です。
+たとえば、`.reg` ファイルに以下のような値が出力されているとします。
 
 ```reg
 "LTK"=hex:e1,4a,e7,53,15,ca,c6,89,bf,f9,24,13,18,fd,14,58
@@ -222,9 +216,38 @@ Windows 側の `.reg` に `LTK`, `IRK`, `ERand`, `EDIV` などが含まれてい
 "ERand"=hex(b):77,ff,f8,84,8e,2b,c2,ea
 "EDIV"=dword:00004601
 "AuthReq"=dword:0000002d
-````
+```
 
-この場合、Linux 側の `info` には以下のように書きます。
+これらはそのまま貼り付けるのではなく、以下のように変換して `info` ファイルの `[LongTermKey]` セクションに書き込みます。
+
+| Windows（`.reg`）の項目 | Linux（`info`）の項目 | 変換ルール |
+| --- | --- | --- |
+| `LTK` | `Key` | カンマを除去して大文字にする |
+| `AuthReq` | `Authenticated` | 10 進数に変換する（または既存の `info` の値を維持） |
+| `KeyLength` | `EncSize` | 16 進数から 10 進数に変換する（`00000010` → `16`） |
+| `EDIV` | `EDiv` | 16 進数から 10 進数に変換する |
+| `ERand` | `Rand` | **バイト順を逆にしてから** 10 進数に変換する |
+
+#### `EDIV` と `ERand` の変換例
+
+- **`EDIV`（`dword:00004601`）の変換**:
+  そのまま 16 進数 `0x4601` として 10 進数に直します。
+
+  ```text
+  0x4601 → 17921
+  ```
+
+- **`ERand`（`hex(b):77,ff,f8,84,8e,2b,c2,ea`）の変換**:
+  リトルエンディアンで保存されているため、**2 桁（1 バイト）単位で並び順を逆にしてから** 10 進数に直します。
+
+  ```text
+  元の値:       77 ff f8 84 8e 2b c2 ea
+  逆順にする:   ea c2 2b 8e 84 f8 ff 77
+  16進数表記:   0xeac22b8e84f8ff77
+  10進数に変換: 16916131041473265527
+  ```
+
+結果として、`info` ファイルの `[LongTermKey]` セクションは以下のようになります。
 
 ```ini
 [LongTermKey]
@@ -235,88 +258,48 @@ EDiv=17921
 Rand=16916131041473265527
 ```
 
-変換内容は以下の通りです。
+:::details デバイスごとの特殊な変換パターン（MX Master 3 / ThinkPad キーボード / Xbox コントローラーなど）
+デバイスによっては、`IRK`（Identity Resolving Key）の変換が必要だったり、`ERand` や `EDIV` の扱いが上記と異なったりする場合があります。うまく接続できない場合は、[ArchWiki](https://wiki.archlinux.org/title/Bluetooth#Dual_boot_pairing) に記載されている以下のパターンを試してみてください。
 
-| Windows側の項目 | Windows側の値                                        | Linux側の項目       | Linuxに書く値                          |
-| ----------- | ------------------------------------------------- | --------------- | ---------------------------------- |
-| `LTK`       | `e1,4a,e7,53,15,ca,c6,89,bf,f9,24,13,18,fd,14,58` | `Key`           | `E14AE75315CAC689BFF9241318FD1458` |
-| `KeyLength` | `00000010`                                        | `EncSize`       | `16`                               |
-| `ERand`     | `77,ff,f8,84,8e,2b,c2,ea`                         | `Rand`          | `16916131041473265527`             |
-| `EDIV`      | `00004601`                                        | `EDiv`          | `17921`                            |
-| `AuthReq`   | `0000002d`                                        | `Authenticated` | `1`                                |
+#### Logicool MX Master 3 / Xbox One S Wireless Controller
 
-`ERand` は `hex(b)` で保存されているため、バイト順を逆にしてから10進数に変換します。
+| 項目名 | 変換方法 |
+| --- | --- |
+| `IRK`（`[IdentityResolvingKey]` の `Key`） | カンマを除去して大文字にする |
+| `LTK`（`[LongTermKey]` の `Key`） | カンマを除去して大文字にする |
+| `ERand`（`Rand`） | `0` にする |
+| `EDIV`（`EDiv`） | `0` にする |
 
-```text
-77 ff f8 84 8e 2b c2 ea
-↓
-ea c2 2b 8e 84 f8 ff 77
-↓
-0xeac22b8e84f8ff77
-↓
-16916131041473265527
-```
+#### ThinkPad TrackPoint Keyboard II / Logicool Pebble M350 / Logicool G604 Lightspeed
 
-`EDIV` は `dword` なので、16進数として10進数に変換します。
+| 項目名 | 変換方法 |
+| --- | --- |
+| `IRK`（`[IdentityResolvingKey]` の `Key`） | **バイト順を逆にして**大文字にする |
+| `LTK`（`[LongTermKey]` の `Key`） | カンマを除去して大文字にする |
+| `ERand`（`Rand`） | バイト順を逆にしてから 10 進数に変換する |
+| `EDIV`（`EDiv`） | **バイト順を逆にしてから** 10 進数に変換する |
 
-```text
-0x4601 = 17921
-```
+#### Xbox ワイヤレスコントローラー
 
-## info ファイルの書き換え
+| 項目名 | 変換方法 |
+|---|---|
+| `LTK`（`[LongTermKey]` の `Key`） | カンマを除去して大文字にする |
+:::
 
-まず root になります。
+---
 
-```bash
-su
-```
+## 4-3. Bluetooth サービスを再起動する
 
-次に、bluetooth アダプタのディレクトリへ移動します。
-
-```bash
-cd /var/lib/bluetooth/[bluetoothアダプタのMACアドレス]
-```
-
-ここで、マウスの MAC アドレスが windows 側と linux 側で異なる場合は、linux 側で作成されたマウスのディレクトリ名を windows 側の MAC アドレスに変更します。
-
-```bash
-mv [linux側のマウスのMACアドレス] [windows側のマウスのMACアドレス]
-```
-
-次に、対象デバイスの `info` ファイルを開きます。
-
-```bash
-vim [マウスのMACアドレス]/info
-```
-
-`.reg` ファイルにペアリングキーのみが含まれている場合は、`[linkkey]` 以下の `key` を windows 側の値に変更します。
-
-```ini
-[linkkey]
-key=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-`ltk` や `irk` などが含まれている場合は、`[longtermkey]` 以下を windows 側の値から変換した内容に変更します。
-
-```ini
-[longtermkey]
-key=[変換後のltk]
-authenticated=[変換後または既存の値]
-encsize=[変換後または既存の値]
-ediv=[変換後のediv]
-rand=[変換後のerand]
-```
-
-編集後、bluetooth サービスを再起動します。
+`info` ファイルを保存したら、`bluetooth.service` を再起動して設定を反映します。
 
 ```bash
 systemctl restart bluetooth.service
 ```
 
-これで、windows 側で最後にペアリングした bluetooth マウスを linux 側からも接続できるようになります。
+これで、Windows と Linux のどちらを起動しても、再ペアリングなしでそのまま Bluetooth デバイスが使えるようになります。
 
 # 参考
 
-- [ArchWiki - Bluetooth](https://wiki.archlinux.jp/index.php/Bluetooth)
+- [ArchWiki - Bluetooth (日本語)](https://wiki.archlinux.jp/index.php/Bluetooth)
 - [ArchWiki - Bluetooth / Dual boot pairing](https://wiki.archlinux.org/title/Bluetooth#Dual_boot_pairing)
 - [bluetoothctl のコマンド一覧と使い方をまとめてみた](https://qiita.com/noraworld/items/55c0cb1eb52cf8dccc12#devices)
